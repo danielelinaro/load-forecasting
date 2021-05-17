@@ -1,0 +1,16 @@
+__pycache__
+.ipynb_checkpoints
+.pan
+.DS_Store
+*.log
+*.mat
+*.npz
+*.raw
+*~
+experiments
+trash
+run_me.sh
+notebooks/*.pdf
+notebooks/*.png
+*.h5
+

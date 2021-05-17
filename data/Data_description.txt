@@ -1,0 +1,15 @@
+The building used in this challenge is divided in five zones, where each zone has 2 to 3 offices. The building has photovoltaic panels with a generation peak of 7.5 kW, a near weather station where the data was collected, inside sensors, light intensity control, and all consumption measured by load type. The data was collected in 5 minutes periods.
+By zones, the buildings have a distribution of 6 researchers in Zone#1, 5 researchers in Zone#2, 5 researchers in Zone#3, 3 researchers in Zone#4, and 5 researchers in Zone#5. Zone#1 includes a meeting room, and Zone#2 includes a server room. Regarding the server room, its HVAC unit was measured in HVAC#2, however, near the end of the year the unit was removed from the monitoring system.
+The light intensity values represent the current state of the lamps and have a linear correlation with the lamp’s consumption.
+The data set represents raw data without any treatment, this means that it is possible to find errors. The weather data can have missing data or missing reading periods. The remaining data do not have missing reading periods, but they can have a fixed zero (0) value, indicating a failure in the system. You can assume that periods with zero voltage represent an error in that zone at that period.
+
+
+The competition will be held during a full business week (14-18 June, 2021). Each day of this week participants will be asked to provide their consumption forecasts for the following day. Immediately after the deadline for submission, the real data from the respective day will be provided, so that it can be used to generate the next output.
+In order to build and refine the forecasting models, a Full Year of historical data (1st data set release) will be provided by mid-April (participants need to register and login to have access to these data).
+2 weeks before the competition week, by 31st May , the next 40 days of historical (2nd data set release) data will be provided – referring to the period imediately before the days to be forecasted. Finally, during the competition week, the data that refers to the last day is provided on a daily basis (3rd data set release).
+
+All the details on the data sets will be provided when the data is available. In summary:
+Requested forecasts: Total building consumption of every 15 minutes during the following day.
+Inputs (all referring to 5 minutes intervals): Total building consumption; consumption per building area; external temperature, weather information.
+
+The building might be in the GECAD Institute in Porto, at the following coordinates: (41.17929,-8.60859)
