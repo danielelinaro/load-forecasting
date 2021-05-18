@@ -214,6 +214,7 @@ if __name__ == '__main__':
                                 prog = progname)
     parser.add_argument('config_file', type=str, action='store', help='configuration file')
     parser.add_argument('--hours-ahead',  default=None,  type=float, help='hours ahead for prediction (overwrites value in configuration file)')
+    parser.add_argument('--max-cores',  default=None,  type=int, help='maximum number of cores to be used by Keras)')
     parser.add_argument('-o', '--output-dir',  default='experiments',  type=str, help='output directory')
     parser.add_argument('--no-comet', action='store_true', help='do not use CometML to log the experiment')
     args = parser.parse_args(args=sys.argv[1:])
@@ -229,17 +230,25 @@ if __name__ == '__main__':
     tf.random.set_seed(seed)
     print_msg('Seed: {}'.format(seed))
 
+    if args.max_cores is not None:
+        if args.max_cores > 0:
+            tf.config.threading.set_inter_op_parallelism_threads(args.max_cores)
+            tf.config.threading.set_intra_op_parallelism_threads(args.max_cores)
+            print_msg(f'Maximum number of cores set to {args.max_cores}.')
+        else:
+            print_warning('Maximum number of cores must be positive.')
+
     if args.hours_ahead is not None:
         config['hours_ahead'] = args.hours_ahead
         print_msg('Hours ahead for prediction: {:g}.'.format(config['hours_ahead']))
 
-    log_to_comet = not args.no_comet and False
+    log_to_comet = not args.no_comet
     
     if log_to_comet:
         ### create a CometML experiment
         experiment = Experiment(
             api_key = os.environ['COMET_API_KEY'],
-            project_name = 'inertia',
+            project_name = 'load-forecasting',
             workspace = 'danielelinaro'
         )
         experiment_key = experiment.get_key()
@@ -348,7 +357,6 @@ if __name__ == '__main__':
     except:
         N_training_traces, N_samples, N_vars = x['training'].shape
         steps_per_epoch = N_training_traces // batch_size
-        print(f'{steps_per_epoch}')
 
     validation_steps = config['validation_steps'] if 'validation_steps' in config else 50
 
