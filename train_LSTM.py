@@ -17,7 +17,6 @@ from tensorflow import keras
 from tensorflow.keras import layers, losses, optimizers, callbacks, models
 import tensorflow_addons as tfa
 from sklearn.preprocessing import OneHotEncoder
-#from deep_utils import *
 
 import colorama as cm
 print_error   = lambda msg: print(f'{cm.Fore.RED}'    + msg + f'{cm.Style.RESET_ALL}')
@@ -214,6 +213,7 @@ if __name__ == '__main__':
                                 formatter_class = arg.ArgumentDefaultsHelpFormatter, \
                                 prog = progname)
     parser.add_argument('config_file', type=str, action='store', help='configuration file')
+    parser.add_argument('--hours-ahead',  default=None,  type=float, help='hours ahead for prediction (overwrites value in configuration file)')
     parser.add_argument('-o', '--output-dir',  default='experiments',  type=str, help='output directory')
     parser.add_argument('--no-comet', action='store_true', help='do not use CometML to log the experiment')
     args = parser.parse_args(args=sys.argv[1:])
@@ -228,6 +228,10 @@ if __name__ == '__main__':
         seed = int.from_bytes(fid.read(4), 'little')
     tf.random.set_seed(seed)
     print_msg('Seed: {}'.format(seed))
+
+    if args.hours_ahead is not None:
+        config['hours_ahead'] = args.hours_ahead
+        print_msg('Hours ahead for prediction: {:g}.'.format(config['hours_ahead']))
 
     log_to_comet = not args.no_comet and False
     
@@ -251,8 +255,8 @@ if __name__ == '__main__':
         sys.exit(1)
 
     ### load the data
-    data = pickle.load(open(data_file, 'rb'))
-    building_energy = data['full']['building_energy']
+    full_data = pickle.load(open(data_file, 'rb'))
+    building_energy = full_data['full']['building_energy']
 
     t0 = datetime.datetime.combine(datetime.date.today(),
                                    building_energy['datetime'][0].to_pydatetime().time())
@@ -295,12 +299,14 @@ if __name__ == '__main__':
     cols = config['inputs']['continuous']
     if config['average_continuous_inputs']:
         cols = [col + '_averaged' for col in cols]
-    x = building_energy[cols].to_numpy(dtype=np.float32)
-    x = np.reshape(x, [n_days, samples_per_day, x.shape[1]])
-    x_train_max = np.max(x[:train_split, :, :], axis=(0, 1))
-    x_train_min = np.min(x[:train_split, :, :], axis=(0, 1))
-    x_scaled = np.array([np.ndarray.flatten(-1 + 2 * (x[:,:,i] - m) / (M - m))
-                         for i,(M,m) in enumerate(zip(x_train_max, x_train_min))]).T
+    building_data = building_energy[cols].to_numpy(dtype=np.float32)
+    building_data = np.reshape(building_data, [n_days, samples_per_day, building_data.shape[1]])
+    ##### change here when more data will be used in the training
+    data = building_data
+    training_set_max = np.max(data[:train_split, :, :], axis=(0, 1))
+    training_set_min = np.min(data[:train_split, :, :], axis=(0, 1))
+    data_scaled = np.array([np.ndarray.flatten(-1 + 2 * (data[:,:,i] - m) / (M - m))
+                            for i,(M,m) in enumerate(zip(training_set_max, training_set_min))]).T
 
     ### categorical data
     encoder = OneHotEncoder(categories='auto')
@@ -310,13 +316,13 @@ if __name__ == '__main__':
 
     ### build training, validation and test sets
     # length of history to use for prediction
-    history_size = samples_per_day // (config['history_size'] // 24)
+    history_size = samples_per_day // int(config['history_size'] // 24)
     # how many steps to predict in the future
-    target_size = config['future_size'] * 60 // time_step
+    target_size = int(config['future_size'] * 60 / time_step)
     # how many steps to look ahead
-    steps_ahead = config['hours_ahead'] * 60 // time_step
+    steps_ahead = int(config['hours_ahead'] * 60 / time_step)
 
-    X = np.concatenate((x_scaled, categorical), axis=1)
+    X = np.concatenate((data_scaled, categorical), axis=1)
     x = {}
     y = {}
     x['training'],   y['training']   = make_data_blocks(X, 0, train_split, history_size, target_size,
@@ -353,18 +359,18 @@ if __name__ == '__main__':
         lr_schedule = None
 
     ### store all the parameters
-    parameters = config.copy()
-    parameters['seed'] = seed
-    parameters['x_train_min'] = x_train_min
-    parameters['x_train_max'] = x_train_max
-    parameters['steps_per_epoch'] = steps_per_epoch
-    parameters['validation_steps'] = validation_steps
-    parameters['buffer_size'] = buffer_size
-    parameters['N_training_traces'] = N_training_traces
-    parameters['N_samples'] = N_samples
-    parameters['N_vars'] = N_vars
     output_path = args.output_dir + '/LSTM/' + experiment_key
-    parameters['output_path'] = output_path
+    parameters = config.copy()
+    parameters['seed']              = seed
+    parameters['training_set_min']  = training_set_min
+    parameters['training_set_max']  = training_set_max
+    parameters['steps_per_epoch']   = steps_per_epoch
+    parameters['validation_steps']  = validation_steps
+    parameters['buffer_size']       = buffer_size
+    parameters['N_training_traces'] = N_training_traces
+    parameters['N_samples']         = N_samples
+    parameters['N_vars']            = N_vars
+    parameters['output_path']       = output_path
 
     ### build the network
     optimizer_pars = config['optimizer'][config['optimizer']['name']]
@@ -391,6 +397,11 @@ if __name__ == '__main__':
     if log_to_comet:
         # add a bunch of tags to the experiment
         experiment.add_tag('LSTM')
+        experiment.add_tag('history={}'.format(config['history_size']))
+        experiment.add_tag('future={}'.format(config['future_size']))
+        experiment.add_tag('ahead={}'.format(config['hours_ahead']))
+        experiment.add_tag('{}_layers'.format(config['model_arch']['N_layers']))
+        experiment.add_tag('{}_neurons'.format(config['model_arch']['N_units']))
         try:
             experiment.add_tag(config['learning_rate_schedule']['name'].split('_')[0] + '_lr')
         except:

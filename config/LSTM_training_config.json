@@ -11,12 +11,12 @@
     "average_continuous_inputs": true,
     "data_split": {"training": 0.8, "test": 0.1, "validation": 0.1},
     "N_epochs": 5,
-    "batch_size": 128,
+    "batch_size": 256,
     "buffer_size": 10000,
     "validation_steps": 50,
     "model_arch": {
 	"N_layers": 3,
-	"N_units": 15
+	"N_units": 20
     },
     "loss_function": {
 	"name": "MAE"
