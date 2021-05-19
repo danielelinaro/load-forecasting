@@ -26,6 +26,9 @@ print_msg     = lambda msg: print(f'{cm.Fore.GREEN}'  + msg + f'{cm.Style.RESET_
 
 LEARNING_RATE = []
 
+__all__ = ['make_data_blocks', 'extract_time_step', 'add_minute_and_workday',
+           'average_data', 'compute_stats', 'make_dataset']
+
 class LearningRateCallback(keras.callbacks.Callback):
     def __init__(self, model, experiment = None):
         self.model = model
@@ -67,6 +70,53 @@ def make_data_blocks(dataset, start_index, end_index, history_size, target_size,
             data.append(dataset[indices])
             labels.append(target[i + steps_ahead : i + steps_ahead + target_size])
     return np.array(data), np.array(labels)
+
+
+def extract_time_step(df):
+    t0 = datetime.datetime.combine(datetime.date.today(),
+                                   df['datetime'][0].to_pydatetime().time())
+    t1 = datetime.datetime.combine(datetime.date.today(),
+                                   df['datetime'][1].to_pydatetime().time())
+    return int((t1 - t0).total_seconds() / 60) # [min]
+
+
+def add_minute_and_workday(df):
+    df = df.copy()
+    df['minute'] = [(dt.hour * 60 + dt.minute) for dt in df['datetime']]
+    df['workday'] = np.logical_not(df['weekend'] | df['holiday'])
+    return df
+
+
+def average_data(df, time_step, orig_time_step, columns):
+    df = df.copy()
+    avg_step = time_step // orig_time_step
+    n_columns = len(columns)
+    for column in columns:
+        df[column + '_averaged'] = df[column].rolling(window=avg_step).mean()
+    cols = df.columns.tolist()
+    cols = cols[:1] + cols[-n_columns:] + cols[1:-n_columns]
+    df = df[cols]
+    df = df[avg_step - 1 : : avg_step]
+    return df
+
+
+def compute_stats(df, time_step):
+    samples_per_day = 24 * 60 // time_step
+    n_samples = df.shape[0]
+    n_days = n_samples // samples_per_day
+    return n_days, samples_per_day
+
+
+def make_dataset(df, cols_continuous,  cols_categorical,
+                 training_set_max, training_set_min,
+                 n_days, samples_per_day):
+    x = df[cols_continuous].to_numpy(dtype=np.float32)
+    x_scaled = np.array([-1 + 2 * (x[:,i] - m) / (M - m)
+                         for i,(M,m) in enumerate(zip(training_set_max, training_set_min))]).T
+    encoder = OneHotEncoder(categories='auto')
+    encoder.fit(df[cols_categorical].to_numpy())
+    categorical = encoder.transform(df[cols_categorical].to_numpy()).toarray()
+    return np.concatenate((x_scaled, categorical), axis=1)
 
 
 def build_model(input_shape, model_arch, loss_fun_pars, optimizer_pars, lr_schedule_pars):
@@ -267,25 +317,10 @@ if __name__ == '__main__':
     full_data = pickle.load(open(data_file, 'rb'))
     building_energy = full_data['full']['building_energy']
 
-    t0 = datetime.datetime.combine(datetime.date.today(),
-                                   building_energy['datetime'][0].to_pydatetime().time())
-    t1 = datetime.datetime.combine(datetime.date.today(),
-                                   building_energy['datetime'][1].to_pydatetime().time())
-    orig_time_step = int((t1 - t0).total_seconds() / 60) # [min]
-    avg_step = time_step // orig_time_step
-
-    building_energy['consumption_averaged'] = building_energy['consumption'].rolling(window=avg_step).mean()
-    building_energy['generation_averaged'] = building_energy['generation'].rolling(window=avg_step).mean()
-    building_energy['minute'] = [(dt.hour * 60 + dt.minute) for dt in building_energy['datetime']]
-    building_energy['workday'] = np.logical_not(building_energy['weekend'] | building_energy['holiday'])
-    cols = building_energy.columns.tolist()
-    cols = cols[:1] + cols[-2:] + cols[1:-2]
-    building_energy = building_energy[cols]
-    building_energy = building_energy[avg_step - 1 : : avg_step]
-
-    samples_per_day = 24 * 60 // time_step
-    n_samples = building_energy.shape[0]
-    n_days = n_samples // samples_per_day
+    orig_time_step = extract_time_step(building_energy)
+    building_energy = add_minute_and_workday(building_energy)
+    building_energy = average_data(building_energy, time_step, orig_time_step, ['consumption', 'generation'])
+    n_days, samples_per_day = compute_stats(building_energy, time_step)
     t = np.arange(samples_per_day) * time_step / 60
     print(f'Time step: {time_step} minutes.')
     print(f'Number of days: {n_days}.')
@@ -305,23 +340,16 @@ if __name__ == '__main__':
           format(n_days_test * samples_per_day, n_days_test))
 
     ### normalize the data
-    cols = config['inputs']['continuous']
+    cols_continuous = config['inputs']['continuous']
     if config['average_continuous_inputs']:
-        cols = [col + '_averaged' for col in cols]
-    building_data = building_energy[cols].to_numpy(dtype=np.float32)
-    building_data = np.reshape(building_data, [n_days, samples_per_day, building_data.shape[1]])
-    ##### change here when more data will be used in the training
-    data = building_data
-    training_set_max = np.max(data[:train_split, :, :], axis=(0, 1))
-    training_set_min = np.min(data[:train_split, :, :], axis=(0, 1))
-    data_scaled = np.array([np.ndarray.flatten(-1 + 2 * (data[:,:,i] - m) / (M - m))
-                            for i,(M,m) in enumerate(zip(training_set_max, training_set_min))]).T
+        cols_continuous = [col + '_averaged' for col in cols_continuous]
+    cols_categorical = config['inputs']['categorical']
 
-    ### categorical data
-    encoder = OneHotEncoder(categories='auto')
-    cols = config['inputs']['categorical']
-    encoder.fit(building_energy[cols].to_numpy())
-    categorical = encoder.transform(building_energy[cols].to_numpy()).toarray()
+    cols_idx = [building_energy.columns.get_loc(col) for col in cols_continuous]
+    training_set_max = building_energy.iloc[:train_split, cols_idx].max().to_numpy(dtype=np.float32)
+    training_set_min = building_energy.iloc[:train_split, cols_idx].min().to_numpy(dtype=np.float32)
+
+    X = make_dataset(building_energy, cols_continuous, cols_categorical, training_set_max, training_set_min, n_days, samples_per_day)
 
     ### build training, validation and test sets
     # length of history to use for prediction
@@ -331,7 +359,6 @@ if __name__ == '__main__':
     # how many steps to look ahead
     steps_ahead = int(config['hours_ahead'] * 60 / time_step)
 
-    X = np.concatenate((data_scaled, categorical), axis=1)
     x = {}
     y = {}
     x['training'],   y['training']   = make_data_blocks(X, 0, train_split, history_size, target_size,
