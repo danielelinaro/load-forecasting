@@ -13,4 +13,5 @@ run_me.sh
 notebooks/*.pdf
 notebooks/*.png
 *.h5
-
+sync_experiments
+nohup.out
