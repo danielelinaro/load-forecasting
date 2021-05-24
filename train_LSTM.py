@@ -9,6 +9,7 @@ import argparse as arg
 from time import strftime, localtime
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 from comet_ml import Experiment
@@ -84,18 +85,16 @@ def add_minute_and_workday(df):
     df = df.copy()
     df['minute'] = [(dt.hour * 60 + dt.minute) for dt in df['datetime']]
     df['workday'] = np.logical_not(df['weekend'] | df['holiday'])
-    return df
+    cols = df.columns.tolist()
+    cols = cols[:1] + cols[-2:] + cols[1:-2]
+    return df[cols]
 
 
 def average_data(df, time_step, orig_time_step, columns):
     df = df.copy()
     avg_step = time_step // orig_time_step
-    n_columns = len(columns)
     for column in columns:
         df[column + '_averaged'] = df[column].rolling(window=avg_step).mean()
-    cols = df.columns.tolist()
-    cols = cols[:1] + cols[-n_columns:] + cols[1:-n_columns]
-    df = df[cols]
     df = df[avg_step - 1 : : avg_step]
     return df
 
@@ -316,11 +315,49 @@ if __name__ == '__main__':
     ### load the data
     full_data = pickle.load(open(data_file, 'rb'))
     building_energy = full_data['full']['building_energy']
+    building_sensor = full_data['full']['building_sensor']
+    weather = full_data['full']['weather_data']
+    # the dataframe with consumption and generation is the starting point for building
+    # the dataset used for training, validation and testing
+    data = building_energy.copy()
+    data.rename({'consumption': 'building_consumption', 'generation': 'building_generation'}, axis='columns', inplace=True)
+    data['building_temperature'] = building_sensor['temperature'].copy()
 
-    orig_time_step = extract_time_step(building_energy)
-    building_energy = add_minute_and_workday(building_energy)
-    building_energy = average_data(building_energy, time_step, orig_time_step, ['consumption', 'generation'])
-    n_days, samples_per_day = compute_stats(building_energy, time_step)
+    orig_time_step = extract_time_step(data)
+    data = add_minute_and_workday(data)
+
+    cols_continuous = config['inputs']['continuous']
+    use_zones = any(['zone' in col for col in cols_continuous])
+    use_sensors = any(['sensor' in col for col in cols_continuous])
+    use_weather = any(['weather' in col for col in cols_continuous])
+
+    def merge_data(blob, data, prefix):
+        for index,df in blob.items():
+            for in_col in df.columns:
+                if in_col not in data.columns:
+                    out_col = f'{prefix}{index}_{in_col.lower()}'
+                    data[out_col] = df[in_col]
+
+    if use_zones:
+        merge_data(full_data['full']['zones'], data, 'zone')
+
+    if use_sensors:
+        merge_data(full_data['full']['sensors'], data, 'sensor')
+
+    data = average_data(data, time_step, orig_time_step, [col for col in cols_continuous if 'weather' not in col])
+
+    if use_weather:
+        df = weather[['datetime','temperature','humidity','radiation']].copy()
+        df.rename({col: 'weather_' + col for col in df.columns if col != 'datetime'}, axis='columns', inplace=True)
+        data = pd.merge(data, df, how='inner', on=['datetime'])
+        for key in 'temperature','humidity','radiation':
+            idx, = np.where(np.isnan(data['weather_' + key]))
+            gap = np.diff(np.where(np.diff(idx) > 1)).max() * time_step / 60
+            print_warning(f'Longest gap in {key} data: {gap:g} hours')
+
+    data.fillna(method='pad', inplace=True)
+
+    n_days, samples_per_day = compute_stats(data, time_step)
     t = np.arange(samples_per_day) * time_step / 60
     print(f'Time step: {time_step} minutes.')
     print(f'Number of days: {n_days}.')
@@ -340,16 +377,15 @@ if __name__ == '__main__':
           format(n_days_test * samples_per_day, n_days_test))
 
     ### normalize the data
-    cols_continuous = config['inputs']['continuous']
     if config['average_continuous_inputs']:
-        cols_continuous = [col + '_averaged' for col in cols_continuous]
+        cols_continuous = [col + '_averaged' if 'weather' not in col else col for col in cols_continuous]
     cols_categorical = config['inputs']['categorical']
 
-    cols_idx = [building_energy.columns.get_loc(col) for col in cols_continuous]
-    training_set_max = building_energy.iloc[:train_split, cols_idx].max().to_numpy(dtype=np.float32)
-    training_set_min = building_energy.iloc[:train_split, cols_idx].min().to_numpy(dtype=np.float32)
+    cols_idx = [data.columns.get_loc(col) for col in cols_continuous]
+    training_set_max = data.iloc[:train_split, cols_idx].max().to_numpy(dtype=np.float32)
+    training_set_min = data.iloc[:train_split, cols_idx].min().to_numpy(dtype=np.float32)
 
-    X = make_dataset(building_energy, cols_continuous, cols_categorical, training_set_max, training_set_min, n_days, samples_per_day)
+    X = make_dataset(data, cols_continuous, cols_categorical, training_set_max, training_set_min, n_days, samples_per_day)
 
     ### build training, validation and test sets
     # length of history to use for prediction

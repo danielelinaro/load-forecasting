@@ -2,21 +2,23 @@
     "data_file": "data/data1.pkl",
     "time_step": 15,
     "inputs": {
-	"continuous": ["consumption", "generation"],
-	"categorical": ["minute", "weekday", "workday"]
+	"categorical": ["minute", "weekday", "workday"],
+	"continuous": [
+	    "building_consumption", "building_generation", "building_temperature"
+	]
     },
     "history_size": 24,
     "future_size": 1,
     "hours_ahead": 0,
     "average_continuous_inputs": true,
     "data_split": {"training": 0.8, "test": 0.1, "validation": 0.1},
-    "N_epochs": 10,
+    "N_epochs": 100,
     "batch_size": 256,
     "buffer_size": 10000,
     "validation_steps": 50,
     "model_arch": {
 	"N_layers": 3,
-	"N_units": 15
+	"N_units": 20
     },
     "loss_function": {
 	"name": "MAE"
