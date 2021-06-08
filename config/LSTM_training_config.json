@@ -1,10 +1,10 @@
 {
-    "data_file": "data/data1.pkl",
+    "data_files": ["data/data1.pkl"],
     "time_step": 15,
     "inputs": {
 	"categorical": ["minute", "weekday", "workday"],
 	"continuous": [
-	    "building_consumption", "building_generation", "building_temperature"
+	    "building_consumption", "building_generation"
 	]
     },
     "history_size": 24,

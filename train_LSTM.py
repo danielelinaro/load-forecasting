@@ -13,6 +13,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from comet_ml import Experiment
+from comet_ml.api import API
+from comet_ml.query import Tag
+
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, losses, optimizers, callbacks, models
@@ -24,6 +27,8 @@ print_error   = lambda msg: print(f'{cm.Fore.RED}'    + msg + f'{cm.Style.RESET_
 print_warning = lambda msg: print(f'{cm.Fore.YELLOW}' + msg + f'{cm.Style.RESET_ALL}')
 print_msg     = lambda msg: print(f'{cm.Fore.GREEN}'  + msg + f'{cm.Style.RESET_ALL}')
 
+comet_workspace = 'danielelinaro'
+comet_project_name = 'load-forecasting'
 
 LEARNING_RATE = []
 
@@ -265,6 +270,7 @@ if __name__ == '__main__':
     parser.add_argument('--hours-ahead',  default=None,  type=float, help='hours ahead for prediction (overwrites value in configuration file)')
     parser.add_argument('--max-cores',  default=None,  type=int, help='maximum number of cores to be used by Keras)')
     parser.add_argument('-o', '--output-dir',  default='experiments',  type=str, help='output directory')
+    parser.add_argument('--new-data', action='store_true', help='continue training with new data')
     parser.add_argument('--no-comet', action='store_true', help='do not use CometML to log the experiment')
     args = parser.parse_args(args=sys.argv[1:])
 
@@ -292,13 +298,13 @@ if __name__ == '__main__':
         print_msg('Hours ahead for prediction: {:g}.'.format(config['hours_ahead']))
 
     log_to_comet = not args.no_comet
-    
+
     if log_to_comet:
         ### create a CometML experiment
         experiment = Experiment(
             api_key = os.environ['COMET_API_KEY'],
-            project_name = 'load-forecasting',
-            workspace = 'danielelinaro'
+            project_name = comet_project_name,
+            workspace = comet_workspace
         )
         experiment_key = experiment.get_key()
     else:
@@ -307,13 +313,77 @@ if __name__ == '__main__':
 
     time_step = config['time_step']
 
-    data_file = config['data_file']
-    if not os.path.isfile(data_file):
-        print_error('{}: {}: no such file.'.format(progname, data_file))
-        sys.exit(1)
+    if args.new_data:
+        ### here we load the weights from a previous experiment
+        api = API(api_key = os.environ['COMET_API_KEY'])
+        workspace = comet_workspace
+        project_name = comet_project_name
+
+        # the tags used to find the right experiment
+        query = Tag('LSTM') & \
+            Tag('{}_layers'.format(config['model_arch']['N_layers'])) & \
+            Tag('{}_neurons'.format(config['model_arch']['N_units'])) & \
+            Tag('ahead={:.1f}'.format(config['hours_ahead'])) & \
+            Tag('future={}'.format(config['future_size'])) & \
+            Tag('history={}'.format(config['history_size']))
+        if 'building_temperature' in config['inputs']['continuous']:
+            with_building_temperature = True
+            query &= Tag('building_temperature')
+        else:
+            with_building_temperature = False
+
+        # find all the experiment that match the set of tags
+        completed_experiments = api.query(workspace, project_name, query, archived=False)
+        if not with_building_temperature:
+            completed_experiments = [expt for expt in completed_experiments if all([tag != 'building_temperature' \
+                                                                                    for tag in expt.get_tags()])]
+
+        # iterate over all experiments to find the one with the smallest validation loss
+        print(f'{len(completed_experiments)} experiments match the query tags.')
+        min_val_loss = 100
+        for completed_experiment in completed_experiments:
+            metrics = completed_experiment.get_metrics()
+            loss = np.array([float(m['metricValue']) for m in metrics if m['metricName'] == 'val_loss'])
+            if loss.min() < min_val_loss:
+                val_loss = loss
+                min_val_loss = loss.min()
+                tags = completed_experiment.get_tags()
+                best_experiment_ID = completed_experiment.id
+
+        # load the best model
+        experiments_path = 'experiments/LSTM/'
+        checkpoint_path = experiments_path + best_experiment_ID + '/checkpoints/'
+        checkpoint_files = glob.glob(checkpoint_path + '*.h5')
+        epochs = [int(os.path.split(file)[-1].split('.')[1].split('-')[0])
+                  for file in checkpoint_files]
+        best_checkpoint = checkpoint_files[epochs.index(np.argmin(val_loss) + 1)]
+        trained_model = keras.models.load_model(best_checkpoint, compile=False)
+        trained_model_pars = pickle.load(open(experiments_path + best_experiment_ID + '/parameters.pkl', 'rb'))
+        print_msg(f'Loaded best checkpoint from experiment {best_experiment_ID[:9]} ({len(val_loss):3d} epochs) ' + \
+                  f'validation loss: {min_val_loss:.4f}\n  tags: {tags}')
+
+    data_files = config['data_files']
+    for data_file in data_files:
+        if not os.path.isfile(data_file):
+            print_error('{}: {}: no such file.'.format(progname, data_file))
+            sys.exit(1)
 
     ### load the data
-    full_data = pickle.load(open(data_file, 'rb'))
+    full_data = {}
+    for data_file in data_files:
+        blob = pickle.load(open(data_file, 'rb'))
+        for key1 in blob:
+            if key1 not in full_data:
+                full_data[key1] = blob[key1]
+            else:
+                for key2,value2 in blob[key1].items():
+                    if isinstance(value2, dict):
+                        for key3,value3 in blob[key1][key2].items():
+                            full_data[key1][key2][key3] = full_data[key1][key2][key3].append(value3, ignore_index=True)
+                    elif isinstance(value2, pd.DataFrame):
+                        full_data[key1][key2] = full_data[key1][key2].append(value2, ignore_index=True)
+                    else:
+                        raise Exception(f'Do not know how to deal with object of type {type(value2)}')
     building_energy = full_data['full']['building_energy']
     building_sensor = full_data['full']['building_sensor']
     weather = full_data['full']['weather_data']
@@ -369,11 +439,11 @@ if __name__ == '__main__':
     n_days_validation = n_days - n_days_training - n_days_test
     train_split = n_days_training * samples_per_day
     validation_split = (n_days_training + n_days_validation) * samples_per_day
-    print('Will use the first {} measurements (corresponding to {} days) to train the network.'.\
+    print('The full training set contains {} measurements (corresponding to {} days).'.\
           format(train_split, n_days_training))
-    print('Will use the subsequent {} measurements (corresponding to {} days) to validate the network.'.\
+    print('The validation set contains {} measurements (corresponding to {} days).'.\
           format(validation_split - train_split, n_days_validation))
-    print('Will use the final {} measurements (corresponding to {} days) to test the network.'.\
+    print('The test set contains {} measurements (corresponding to {} days).'.\
           format(n_days_test * samples_per_day, n_days_test))
 
     ### normalize the data
@@ -404,6 +474,11 @@ if __name__ == '__main__':
     x['test'],       y['test']       = make_data_blocks(X, validation_split, None, history_size,
                                                         target_size, steps_ahead, target=X[:,0])
 
+    if args.new_data:
+        # use as training set only the data that the network has not seen previously
+        x['training'] = x['training'][trained_model_pars['N_training_traces']:, :, :]
+        y['training'] = y['training'][trained_model_pars['N_training_traces']:]
+
     for key,value in x.items():
         shp = value.shape
         print(f'Shape of the {key} set: ({shp[0]},{shp[1]},{shp[2]})')
@@ -415,10 +490,10 @@ if __name__ == '__main__':
     validation_dataset = tf.data.Dataset.from_tensor_slices((x['validation'], y['validation']))
     validation_dataset = validation_dataset.batch(batch_size).repeat()
 
+    N_training_traces, N_samples, N_vars = x['training'].shape
     try:
         steps_per_epoch = config['steps_per_epoch']
     except:
-        N_training_traces, N_samples, N_vars = x['training'].shape
         steps_per_epoch = N_training_traces // batch_size
 
     validation_steps = config['validation_steps'] if 'validation_steps' in config else 50
@@ -442,6 +517,8 @@ if __name__ == '__main__':
     parameters['N_samples']         = N_samples
     parameters['N_vars']            = N_vars
     parameters['output_path']       = output_path
+    if args.new_data:
+        parameters['N_training_traces'] += trained_model_pars['N_training_traces']
 
     ### build the network
     optimizer_pars = config['optimizer'][config['optimizer']['name']]
@@ -451,6 +528,9 @@ if __name__ == '__main__':
                                          config['loss_function'],
                                          optimizer_pars,
                                          lr_schedule)
+    if args.new_data:
+        model.set_weights(trained_model.get_weights())
+        print_msg('Set model weights from previous training.')
 
     model.summary()
 
@@ -477,7 +557,6 @@ if __name__ == '__main__':
             experiment.add_tag(config['learning_rate_schedule']['name'].split('_')[0] + '_lr')
         except:
             pass
-
 
     ### train the network
     history = train_model(model, training_dataset, validation_dataset,
