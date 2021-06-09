@@ -559,6 +559,8 @@ if __name__ == '__main__':
         experiment.add_tag('{}_neurons'.format(config['model_arch']['N_units']))
         experiment.add_tag('_'.join([os.path.splitext(os.path.basename(data_file))[0] \
                                      for data_file in config['data_files']]))
+        if with_building_temperature:
+            experiment.add_tag('building_temperature')
         if args.new_data:
             experiment.add_tag('initialized_weights')
         else:
