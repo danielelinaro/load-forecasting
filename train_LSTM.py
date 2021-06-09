@@ -491,6 +491,10 @@ if __name__ == '__main__':
     validation_dataset = validation_dataset.batch(batch_size).repeat()
 
     N_training_traces, N_samples, N_vars = x['training'].shape
+    if N_training_traces == 0:
+        print_error('No traces in training set.')
+        sys.exit(1)
+
     try:
         steps_per_epoch = config['steps_per_epoch']
     except:
@@ -553,6 +557,12 @@ if __name__ == '__main__':
         experiment.add_tag('ahead={}'.format(config['hours_ahead']))
         experiment.add_tag('{}_layers'.format(config['model_arch']['N_layers']))
         experiment.add_tag('{}_neurons'.format(config['model_arch']['N_units']))
+        experiment.add_tag('_'.join([os.path.splitext(os.path.basename(data_file))[0] \
+                                     for data_file in config['data_files']]))
+        if args.new_data:
+            experiment.add_tag('initialized_weights')
+        else:
+            experiment.add_tag('random_initial_weights')
         try:
             experiment.add_tag(config['learning_rate_schedule']['name'].split('_')[0] + '_lr')
         except:

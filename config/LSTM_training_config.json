@@ -1,5 +1,5 @@
 {
-    "data_files": ["data/data1.pkl"],
+    "data_files": ["data/data1.pkl", "data/data2.pkl"],
     "time_step": 15,
     "inputs": {
 	"categorical": ["minute", "weekday", "workday"],
@@ -11,7 +11,7 @@
     "future_size": 1,
     "hours_ahead": 0,
     "average_continuous_inputs": true,
-    "data_split": {"training": 0.8, "test": 0.1, "validation": 0.1},
+    "data_split": {"training": 0.9, "test": 0.05, "validation": 0.05},
     "N_epochs": 100,
     "batch_size": 256,
     "buffer_size": 10000,
