@@ -295,7 +295,7 @@ if __name__ == '__main__':
 
     if args.hours_ahead is not None:
         config['hours_ahead'] = args.hours_ahead
-        print_msg('Hours ahead for prediction: {:g}.'.format(config['hours_ahead']))
+        print_msg('Hours ahead for prediction: {:.1f}.'.format(config['hours_ahead']))
 
     log_to_comet = not args.no_comet
 
@@ -313,6 +313,11 @@ if __name__ == '__main__':
 
     time_step = config['time_step']
 
+    if 'building_temperature' in config['inputs']['continuous']:
+        with_building_temperature = True
+    else:
+        with_building_temperature = False
+
     if args.new_data:
         ### here we load the weights from a previous experiment
         api = API(api_key = os.environ['COMET_API_KEY'])
@@ -326,11 +331,8 @@ if __name__ == '__main__':
             Tag('ahead={:.1f}'.format(config['hours_ahead'])) & \
             Tag('future={}'.format(config['future_size'])) & \
             Tag('history={}'.format(config['history_size']))
-        if 'building_temperature' in config['inputs']['continuous']:
-            with_building_temperature = True
+        if with_building_temperature:
             query &= Tag('building_temperature')
-        else:
-            with_building_temperature = False
 
         # find all the experiment that match the set of tags
         completed_experiments = api.query(workspace, project_name, query, archived=False)
@@ -554,7 +556,7 @@ if __name__ == '__main__':
         experiment.add_tag('LSTM')
         experiment.add_tag('history={}'.format(config['history_size']))
         experiment.add_tag('future={}'.format(config['future_size']))
-        experiment.add_tag('ahead={}'.format(config['hours_ahead']))
+        experiment.add_tag('ahead={:.1f}'.format(config['hours_ahead']))
         experiment.add_tag('{}_layers'.format(config['model_arch']['N_layers']))
         experiment.add_tag('{}_neurons'.format(config['model_arch']['N_units']))
         experiment.add_tag('_'.join([os.path.splitext(os.path.basename(data_file))[0] \
