@@ -4,15 +4,15 @@
     "inputs": {
 	"categorical": ["minute", "weekday", "workday"],
 	"continuous": [
-	    "building_consumption", "building_generation"
+	    "building_consumption"
 	]
     },
     "history_size": 24,
-    "future_size": 1,
+    "future_size": 0.5,
     "hours_ahead": 0,
     "average_continuous_inputs": true,
     "data_split": {"training": 0.9, "test": 0.05, "validation": 0.05},
-    "N_epochs": 100,
+    "N_epochs": 300,
     "batch_size": 256,
     "buffer_size": 10000,
     "validation_steps": 50,
@@ -51,7 +51,7 @@
 	"names": ["early_stopping"],
 	"early_stopping": {
 	    "monitor": "val_loss",
-	    "patience": 500,
+	    "patience": 50,
 	    "mode": "min"
 	},
 	"reduce_on_plateau": {

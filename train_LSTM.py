@@ -329,7 +329,7 @@ if __name__ == '__main__':
             Tag('{}_layers'.format(config['model_arch']['N_layers'])) & \
             Tag('{}_neurons'.format(config['model_arch']['N_units'])) & \
             Tag('ahead={:.1f}'.format(config['hours_ahead'])) & \
-            Tag('future={}'.format(config['future_size'])) & \
+            Tag('future={:.2f}'.format(config['future_size'])) & \
             Tag('history={}'.format(config['history_size']))
         if with_building_temperature:
             query &= Tag('building_temperature')
@@ -461,7 +461,7 @@ if __name__ == '__main__':
 
     ### build training, validation and test sets
     # length of history to use for prediction
-    history_size = samples_per_day // int(config['history_size'] // 24)
+    history_size = samples_per_day * int(config['history_size'] // 24)
     # how many steps to predict in the future
     target_size = int(config['future_size'] * 60 / time_step)
     # how many steps to look ahead
@@ -555,7 +555,7 @@ if __name__ == '__main__':
         # add a bunch of tags to the experiment
         experiment.add_tag('LSTM')
         experiment.add_tag('history={}'.format(config['history_size']))
-        experiment.add_tag('future={}'.format(config['future_size']))
+        experiment.add_tag('future={:.2f}'.format(config['future_size']))
         experiment.add_tag('ahead={:.1f}'.format(config['hours_ahead']))
         experiment.add_tag('{}_layers'.format(config['model_arch']['N_layers']))
         experiment.add_tag('{}_neurons'.format(config['model_arch']['N_units']))
