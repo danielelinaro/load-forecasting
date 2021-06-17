@@ -113,13 +113,16 @@ def compute_stats(df, time_step):
 
 def make_dataset(df, cols_continuous,  cols_categorical,
                  training_set_max, training_set_min,
-                 n_days, samples_per_day):
+                 n_days, samples_per_day, encoder=None, full_output=False):
     x = df[cols_continuous].to_numpy(dtype=np.float32)
     x_scaled = np.array([-1 + 2 * (x[:,i] - m) / (M - m)
                          for i,(M,m) in enumerate(zip(training_set_max, training_set_min))]).T
-    encoder = OneHotEncoder(categories='auto')
-    encoder.fit(df[cols_categorical].to_numpy())
+    if encoder is None:
+        encoder = OneHotEncoder(categories='auto')
+        encoder.fit(df[cols_categorical].to_numpy())
     categorical = encoder.transform(df[cols_categorical].to_numpy()).toarray()
+    if full_output:
+        return np.concatenate((x_scaled, categorical), axis=1), encoder
     return np.concatenate((x_scaled, categorical), axis=1)
 
 
