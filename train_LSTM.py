@@ -321,6 +321,11 @@ if __name__ == '__main__':
     else:
         with_building_temperature = False
 
+    if len(config['inputs']['continuous']) == 1 and config['inputs']['continuous'][0] == 'building_consumption':
+        consumption_only = True
+    else:
+        consumption_only = False
+
     if args.new_data:
         ### here we load the weights from a previous experiment
         api = API(api_key = os.environ['COMET_API_KEY'])
@@ -566,6 +571,8 @@ if __name__ == '__main__':
                                      for data_file in config['data_files']]))
         if with_building_temperature:
             experiment.add_tag('building_temperature')
+        if consumption_only:
+            experiment.add_tag('consumption_only')
         if args.new_data:
             experiment.add_tag('initialized_weights')
         else:
