@@ -1,0 +1,12 @@
+{
+    "site_id": "caltech",
+    "filters": [
+        ["connectionTime", ">=", "1 Jan 2019"],
+        ["connectionTime", "<=", "31 Jan 2019"]
+    ],
+    "logicals": ["and"],
+    "sort": null,
+    "time_series": false,
+    "pretty": false,
+    "output": "EV_data.json"
+}
