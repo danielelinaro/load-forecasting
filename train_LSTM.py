@@ -389,9 +389,9 @@ if __name__ == '__main__':
                 for key2,value2 in blob[key1].items():
                     if isinstance(value2, dict):
                         for key3,value3 in blob[key1][key2].items():
-                            full_data[key1][key2][key3] = full_data[key1][key2][key3].append(value3, ignore_index=True)
+                            full_data[key1][key2][key3] = pd.concat([full_data[key1][key2][key3], value3], ignore_index=True)
                     elif isinstance(value2, pd.DataFrame):
-                        full_data[key1][key2] = full_data[key1][key2].append(value2, ignore_index=True)
+                        full_data[key1][key2] = pd.concat([full_data[key1][key2], value2], ignore_index=True)
                     else:
                         raise Exception(f'Do not know how to deal with object of type {type(value2)}')
     building_energy = full_data['full']['building_energy']
