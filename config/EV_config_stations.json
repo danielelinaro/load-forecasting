@@ -2,11 +2,12 @@
     "site_id": "caltech",
     "filters": [
         ["stationID", "==", "2-39-127-19"],
-        ["stationID", "==", "2-39-78-361"]
+        ["connectionTime", ">=", "1 Jan 2019"],
+        ["connectionTime", "<=", "31 Dec 2019"]
     ],
-    "logicals": ["or"],
+    "logicals": ["and", "and"],
     "sort": "connectionTime",
-    "time_series": false,
+    "time_series": true,
     "pretty": false,
-    "output": "EV_data_stations.json"
+    "output": "EV_data_station_with_ts_2019.json"
 }

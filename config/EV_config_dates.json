@@ -5,8 +5,8 @@
         ["connectionTime", "<=", "31 Jan 2019"]
     ],
     "logicals": ["and"],
-    "sort": null,
+    "sort": "connectionTime",
     "time_series": false,
     "pretty": false,
-    "output": "EV_data.json"
+    "output": "EV_data_Jan_2019.json"
 }

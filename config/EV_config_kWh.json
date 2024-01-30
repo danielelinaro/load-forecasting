@@ -1,12 +1,13 @@
 {
     "site_id": "caltech",
     "filters": [
-        ["kWhDelivered", ">=", 10],
-        ["kWhDelivered", "<=", 11]
+        ["connectionTime", ">=", "1 Jan 2019"],
+        ["connectionTime", "<=", "31 Dec 2019"],
+        ["kWhDelivered", "<=", 100]
     ],
-    "logicals": ["and"],
+    "logicals": ["and", "and"],
     "sort": "connectionTime",
     "time_series": false,
     "pretty": false,
-    "output": "EV_data.npz"
+    "output": "EV_data_2019_kWh_0-100.json"
 }
